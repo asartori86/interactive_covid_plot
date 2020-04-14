@@ -1,89 +1,56 @@
-from os.path import join, dirname
-import datetime
-
 import pandas as pd
-from scipy.signal import savgol_filter
+df = pd.read_csv('https://raw.githubusercontent.com/pcm-dpc/COVID-19/master/dati-province/dpc-covid19-ita-province.csv',parse_dates=['data'])
 
-from bokeh.io import curdoc
-from bokeh.layouts import row, column
-from bokeh.models import ColumnDataSource, DataRange1d, Select
-from bokeh.palettes import Blues4
-from bokeh.plotting import figure
+from bokeh.plotting import figure, output_notebook, show, curdoc
+from bokeh.models import CDSView, GroupFilter, ColumnDataSource, CategoricalColorMapper
+from bokeh.transform import factor_cmap
+from bokeh.palettes import Paired, Spectral3, GnBu3, Turbo256, viridis, turbo, Category20,cividis,magma,plasma,Category10_4,Category10_9,Category10,Set1
+from bokeh.models import HoverTool
+from bokeh.models.widgets import TextInput
+from bokeh.layouts import column 
 
-STATISTICS = ['record_min_temp', 'actual_min_temp', 'average_min_temp', 'average_max_temp', 'actual_max_temp', 'record_max_temp']
+tw = TextInput(title='List of cities (e.g., trieste treviso milano roma)', value='')
+hover_tool = HoverTool(tooltips=[
+        ('City', '@denominazione_provincia'),
+        ('Data','@data{%F}'),
+        ('Totale casi', '@totale_casi',)],
+                           formatters={'@data': 'datetime'})
+p = figure(x_axis_type='datetime', x_axis_label='data m/d', y_axis_label='totale casi',
+           tools=[hover_tool,'crosshair'])
+cities = ['Trieste']
+sub = df[df.denominazione_provincia.isin(cities)]
+cds = ColumnDataSource(data=sub)
+category_map = CategoricalColorMapper(factors=cities,palette=Category20[20])
 
-def get_dataset(src, name, distribution):
-    df = src[src.airport == name].copy()
-    del df['airport']
-    df['date'] = pd.to_datetime(df.date)
-    # timedelta here instead of pd.DateOffset to avoid pandas bug < 0.18 (Pandas issue #11925)
-    df['left'] = df.date - datetime.timedelta(days=0.5)
-    df['right'] = df.date + datetime.timedelta(days=0.5)
-    df = df.set_index(['date'])
-    df.sort_index(inplace=True)
-    if distribution == 'Smoothed':
-        window, order = 51, 3
-        for key in STATISTICS:
-            df[key] = savgol_filter(df[key], window, order)
+plot = p.circle(x='data', y='totale_casi', source=cds, 
+         color={'field':'denominazione_provincia', 'transform': category_map},
+         alpha=0.99, size=4,  legend='denominazione_provincia',
+         )
+    
 
-    return ColumnDataSource(data=df)
+p.legend.location='top_left'
 
-def make_plot(source, title):
-    plot = figure(x_axis_type="datetime", plot_width=800, tools="", toolbar_location=None)
-    plot.title.text = title
+    
+p_source = plot.data_source
 
-    plot.quad(top='record_max_temp', bottom='record_min_temp', left='left', right='right',
-              color=Blues4[2], source=source, legend="Record")
-    plot.quad(top='average_max_temp', bottom='average_min_temp', left='left', right='right',
-              color=Blues4[1], source=source, legend="Average")
-    plot.quad(top='actual_max_temp', bottom='actual_min_temp', left='left', right='right',
-              color=Blues4[0], alpha=0.5, line_color="black", source=source, legend="Actual")
+    
+def callback (attr, new, old):
+    #print(tw.value)
+    l_cities = old.lower().split(' ')
+    
+    cities = [c.capitalize() for c in l_cities]
+    sub = df[df.denominazione_provincia.isin(cities)]
+    plot.data_source.data = dict(ColumnDataSource(data=sub).data)
+    category_map = CategoricalColorMapper(factors=cities,palette=Category20[20])
+    plot.glyph.fill_color = {'field':'denominazione_provincia', 'transform': category_map}
+    plot.glyph.line_color = {'field':'denominazione_provincia', 'transform': category_map}
+    
 
-    # fixed attributes
-    plot.xaxis.axis_label = None
-    plot.yaxis.axis_label = "Temperature (F)"
-    plot.axis.axis_label_text_font_style = "bold"
-    plot.x_range = DataRange1d(range_padding=0.0)
-    plot.grid.grid_line_alpha = 0.3
+    
+tw.on_change('value',callback)
 
-    return plot
+curdoc().add_root(column(tw,p))
 
-def update_plot(attrname, old, new):
-    city = city_select.value
-    plot.title.text = "Weather data for " + cities[city]['title']
 
-    src = get_dataset(df, cities[city]['airport'], distribution_select.value)
-    source.data.update(src.data)
 
-city = 'Austin'
-distribution = 'Discrete'
 
-cities = {
-    'Austin': {
-        'airport': 'AUS',
-        'title': 'Austin, TX',
-    },
-    'Boston': {
-        'airport': 'BOS',
-        'title': 'Boston, MA',
-    },
-    'Seattle': {
-        'airport': 'SEA',
-        'title': 'Seattle, WA',
-    }
-}
-
-city_select = Select(value=city, title='City', options=sorted(cities.keys()))
-distribution_select = Select(value=distribution, title='Distribution', options=['Discrete', 'Smoothed'])
-
-df = pd.read_csv(join(dirname(__file__), 'data/2015_weather.csv'))
-source = get_dataset(df, cities[city]['airport'], distribution)
-plot = make_plot(source, "Weather data for " + cities[city]['title'])
-
-city_select.on_change('value', update_plot)
-distribution_select.on_change('value', update_plot)
-
-controls = column(city_select, distribution_select)
-
-curdoc().add_root(row(plot, controls))
-curdoc().title = "Weather"
