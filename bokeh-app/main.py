@@ -17,7 +17,7 @@ hover_tool = HoverTool(tooltips=[
                            formatters={'@data': 'datetime'})
 p = figure(x_axis_type='datetime', x_axis_label='data m/d', y_axis_label='totale casi',
            tools=[hover_tool,'crosshair'])
-cities = ['Trieste']
+cities = ['']
 sub = df[df.denominazione_provincia.isin(cities)]
 cds = ColumnDataSource(data=sub)
 category_map = CategoricalColorMapper(factors=cities,palette=Category20[20])
